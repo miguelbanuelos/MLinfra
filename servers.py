@@ -69,7 +69,7 @@ navbar = dbc.NavbarSimple(
         dbc.NavItem(dbc.NavLink("Forecast & Analytics", href="/")),
         dbc.NavItem(dbc.NavLink("Exclusions Management", href="/exclusions")),
     ],
-    brand="⚙️ HOMELAB CAPACITY MONITOR",
+    brand="⚙️ HOMELAB1 CAPACITY MONITOR",
     brand_href="/",
     color="dark", dark=True, className="mb-4"
 )
