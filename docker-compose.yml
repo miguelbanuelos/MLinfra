@@ -1,0 +1,16 @@
+services:
+  dash-app:
+    build: .            
+    image: capacity_opt   # Ahora esto servirá como etiqueta local
+    container_name: capacity_opt
+    ports:
+      - "8099:8099"
+    restart: unless-stopped
+    volumes:
+      - .:/usr/src/app
+    networks:
+      - shared_network
+  
+networks:
+  shared_network:
+    external: true

@@ -1,0 +1,1 @@
+DELETE FROM public.metrics_exclusions WHERE id = %s;
