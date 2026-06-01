@@ -19,4 +19,4 @@ COPY . .
 EXPOSE 8099
 
 # Uvicorn port 8053
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8099"]
+CMD ["gunicorn", "main:app", "--host", "0.0.0.0", "--port", "8099"]
