@@ -16,5 +16,4 @@ COPY . .
 
 EXPOSE 8099
 
-# EL FIX: Sintaxis correcta de Gunicorn apuntando a servers.py
 CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:8099", "servers:server"]
