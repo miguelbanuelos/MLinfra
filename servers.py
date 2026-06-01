@@ -62,7 +62,7 @@ def execute_query(sql_filename, params=None, is_select=True):
 # Dash Initialization
 # -------------------------------------------------------------------------
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG], suppress_callback_exceptions=True)
-app.title = "Capacity Optimization Platform"
+app.title = "HomeLab Analytics Platform"
 server = app.server
 navbar = dbc.NavbarSimple(
     children=[
