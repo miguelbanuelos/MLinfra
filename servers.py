@@ -334,14 +334,18 @@ def process_analytics(n_clicks, host, metric, past_days, future_days):
         margin=dict(l=40, r=20, t=20, b=40), 
         height=300
     )
-    # 4. ENTRENAMIENTO SARIMAX
-    y_train = df_telemetry['Clean']
+# 4. ENTRENAMIENTO SARIMAX (OPTIMIZADO CON RESAMPLE)
+    y_train = df_telemetry['Clean'].resample('1h').mean().fillna(0)
     
+    # Preparamos las variables exógenas con el nuevo índice por hora
     X_train = pd.DataFrame(index=y_train.index)
     X_train['is_ai_running'] = 0.0
     X_train['is_offline_schedule'] = (X_train.index.hour < 11).astype(int)
     
-    fechas_futuras = pd.date_range(start=esqueleto_tiempo[-1], periods=pasos_futuros + 1, freq='5min')[1:]
+    # Recalculamos los pasos futuros basados en horas (24 por día)
+    pasos_futuros_horas = int(future_days) * 24
+        
+    fechas_futuras = pd.date_range(start=y_train.index[-1], periods=pasos_futuros_horas + 1, freq='1h')[1:]
     
     X_future = pd.DataFrame(index=fechas_futuras)
     X_future['is_ai_running'] = 0.0
@@ -349,7 +353,9 @@ def process_analytics(n_clicks, host, metric, past_days, future_days):
     
     try:
         model = pm.auto_arima(y_train, X=X_train, start_p=0, start_q=0, max_p=3, max_q=3, seasonal=False, error_action='ignore', suppress_warnings=True)
-        prediccion, conf_int = model.predict(n_periods=pasos_futuros, X=X_future, return_conf_int=True)
+        
+        # Predecimos usando los pasos calculados por hora
+        prediccion, conf_int = model.predict(n_periods=pasos_futuros_horas, X=X_future, return_conf_int=True)
         
         ganador_arima = str(model.summary().tables[0].data[1][1]).strip()
         aic_val = f"{model.aic():.2f}"
@@ -361,8 +367,8 @@ def process_analytics(n_clicks, host, metric, past_days, future_days):
 
     # 5. DIBUJAR GRÁFICO PRINCIPAL
     fig_forecast = go.Figure()
-    fig_forecast.add_trace(go.Scatter(x=df_telemetry.index, y=df_telemetry['Usage'], name='Raw (DB)', line=dict(color='gray', width=1), opacity=0.5))
-    fig_forecast.add_trace(go.Scatter(x=df_telemetry.index, y=df_telemetry['Clean'], name='Filtered (Exclusions)', line=dict(color='#00bc8c', width=2)))
+    fig_forecast.add_trace(go.Scatter(x=df_telemetry.index, y=df_telemetry['Usage'], name='Raw Unfiltered', line=dict(color='gray', width=1), opacity=0.5))
+    fig_forecast.add_trace(go.Scatter(x=df_telemetry.index, y=df_telemetry['Clean'], name='Normalized Time Series', line=dict(color='#00bc8c', width=2)))
     
     fig_forecast.add_trace(go.Scatter(x=list(fechas_futuras), y=list(prediccion), name='Forecast', line=dict(color='#3498db', dash='dash', width=2)))
     
