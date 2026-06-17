@@ -16,4 +16,4 @@ COPY . .
 
 EXPOSE 8099
 
-CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:8099", "servers:server"]
+CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:8099", "servers:server", "--timeout", "300"]
