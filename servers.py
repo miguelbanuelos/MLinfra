@@ -11,11 +11,11 @@ from dotenv import load_dotenv
 import urllib.parse
 import warnings
 
-# Suppress math warnings caused by flatline data (e.g., servers turned off)
+# Suppress math warnings caused by flatline data
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # -------------------------------------------------------------------------
-# 1. Load Credentials from .env and Sanitize URL
+# 1. Cargar Credenciales
 # -------------------------------------------------------------------------
 load_dotenv()
 
@@ -30,17 +30,16 @@ safe_password = urllib.parse.quote_plus(DB_PASSWORD)
 DB_URL = f"postgresql://{safe_user}:{safe_password}@{DB_HOST}:{DB_PORT}/{DB_DB}?sslmode=disable"
 
 # -------------------------------------------------------------------------
-# 2. Secure SQL Execution Engine
+# 2. Motor SQL
 # -------------------------------------------------------------------------
 def load_sql(filename):
-    """Loads a SQL file from the /sql folder"""
     filepath = os.path.join(os.path.dirname(__file__), 'sql', filename)
     with open(filepath, 'r') as file:
         return file.read()
 
-def execute_query(sql_filename, params=None, is_select=True):
-    """Executes a native query with psycopg2 and converts it cleanly to Pandas."""
-    query = load_sql(sql_filename)
+def execute_query(sql_or_filename, params=None, is_select=True, is_file=True):
+    """Ejecuta SQL. Puede recibir un archivo .sql o una cadena de texto directa."""
+    query = load_sql(sql_or_filename) if is_file else sql_or_filename
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
     
@@ -59,11 +58,12 @@ def execute_query(sql_filename, params=None, is_select=True):
         conn.close()
 
 # -------------------------------------------------------------------------
-# Dash Initialization
+# Inicialización de Dash
 # -------------------------------------------------------------------------
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG], suppress_callback_exceptions=True)
 app.title = "HomeLab Analytics Platform"
 server = app.server
+
 navbar = dbc.NavbarSimple(
     children=[
         dbc.NavItem(dbc.NavLink("Forecast & Analytics", href="/")),
@@ -81,7 +81,7 @@ app.layout = html.Div([
 ])
 
 # =========================================================================
-# HELPER FUNCTION TO POPULATE MENUS DYNAMICALLY
+# HELPER: POPULAR MENÚS
 # =========================================================================
 def get_host_options():
     df_hosts = execute_query('query_get_hosts.sql')
@@ -91,7 +91,7 @@ def get_host_options():
     return [], None
 
 # =========================================================================
-# VIEW 1: FORECAST AND HEATMAP LAYOUT
+# VISTA 1: FORECAST 
 # =========================================================================
 def layout_analytics():
     opts, default_val = get_host_options()
@@ -100,48 +100,64 @@ def layout_analytics():
         dbc.Col([
             dbc.Card([
                 dbc.CardBody([
-                    html.H5("Operation Filters", className="card-title text-info"),
-                    html.Label("Select Server/Host:"),
+                    html.H5("Operation Filters", className="card-title text-info mb-4"),
+                    
+                    html.Label("1. Select Server:"),
                     dcc.Dropdown(id='dropdown-host', options=opts, value=default_val, className="text-dark mb-3"),
-                    html.Label("Training Strategy (Past -> Future):"),
-                    dcc.Dropdown(
-                        id='dropdown-ventana',
-                        options=[
-                            {'label': '360 Intervals (30 hrs) -> Predicts 180', 'value': 360},
-                            {'label': '720 Intervals (60 hrs) -> Predicts 360', 'value': 720}
-                        ],
-                        value=360, className="text-dark"
-                    ),
+                    
+                    html.Label("2. Target Metric:"),
+                    dcc.Dropdown(id='dropdown-metric', options=[
+                        {'label': 'CPU Usage (%)', 'value': 'cpu_percent_max'},
+                        {'label': 'Memory Usage (%)', 'value': 'mem_percent_max'}
+                    ], value='cpu_percent_max', className="text-dark mb-3", clearable=False),
+                    
+                    html.Label("3. Historical Data (Training):"),
+                    dcc.Dropdown(id='dropdown-past-days', options=[
+                        {'label': f'{d} Days in Past', 'value': d} for d in [10, 20, 30, 45]
+                    ], value=10, className="text-dark mb-3", clearable=False),
+                    
+                    html.Label("4. Forecast Window (Future):"),
+                    dcc.Dropdown(id='dropdown-future-days', options=[
+                        {'label': f'{d} Days Ahead', 'value': d} for d in [5, 10, 15, 20, 30, 45]
+                    ], value=5, className="text-dark mb-4", clearable=False),
+                    
+                    # Botón reactivo
+                    dbc.Button("🚀 Generate Forecast", id='btn-forecast', color="primary", className="w-100 fw-bold")
                 ])
-            ], className="mb-4")
+            ], className="mb-4 shadow-sm border-primary")
         ], width=3),
         
         dbc.Col([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Capacity Prediction with SARIMAX Scenario"),
+                        dbc.CardHeader("Capacity Prediction (SARIMAX)"),
                         dbc.CardBody([
-                            dcc.Graph(id='graph-forecast'),
+                            # Spinner para que el usuario sepa que está cargando
+                            dcc.Loading(
+                                id="loading-forecast",
+                                type="default",
+                                children=dcc.Graph(id='graph-forecast')
+                            ),
                             html.H6("Reference Metrics", className="mt-3 text-warning"),
                             html.Div(id='table-stats-container')
                         ])
-                    ], className="mb-4")
+                    ], className="mb-4 shadow-sm")
                 ])
             ]),
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Heatmap: Max CPU Values per Hour and Day"),
+                        dbc.CardHeader("Heatmap: Max Values per Hour and Day"),
                         dbc.CardBody([dcc.Graph(id='graph-heatmap')])
-                    ])
+                    ], className="shadow-sm")
                 ])
             ])
         ], width=9)
     ])
 
 # =========================================================================
-# VIEW 2: EXCLUSIONS MANAGEMENT
+# VISTA 2: EXCLUSIONES
 # =========================================================================
 def layout_exclusions():
     opts, default_val = get_host_options()
@@ -166,7 +182,6 @@ def layout_exclusions():
                 ])
             ])
         ], width=4),
-        
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader("Active Exclusions Catalog"),
@@ -200,7 +215,6 @@ def manage_exclusions(n_add, n_del, host, start, end, cat, desc, delete_id):
     ctx = dash.callback_context
     msg_add, msg_del = "", ""
     
-    # 1. Process button clicks (Save or Delete)
     if ctx.triggered:
         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
         if trigger_id == 'btn-add-excl' and all([host, start, end]):
@@ -210,13 +224,14 @@ def manage_exclusions(n_add, n_del, host, start, end, cat, desc, delete_id):
             execute_query('query_delete_exclusion.sql', (int(delete_id),), is_select=False)
             msg_del = html.Span(f"ID {delete_id} deleted.", className="text-warning")
 
-    # 2. Dynamic Table Logic: Filter by selected host, or show all if none selected
     if host:
         df_excl = execute_query('query_exclusions.sql', (host,))
     else:
         df_excl = execute_query('query_all_exclusions.sql')
     
-    # 3. Build the visual table
+    if df_excl is None or df_excl.empty:
+        return html.Div("No active exclusions."), msg_add, msg_del
+        
     table = dash_table.DataTable(
         data=df_excl.to_dict('records'),
         columns=[{"name": i.upper(), "id": i} for i in df_excl.columns],
@@ -226,76 +241,106 @@ def manage_exclusions(n_add, n_del, host, start, end, cat, desc, delete_id):
     )
     return table, msg_add, msg_del
 
+
 @app.callback(
     [Output('graph-forecast', 'figure'), Output('table-stats-container', 'children'), Output('graph-heatmap', 'figure')],
-    [Input('dropdown-host', 'value'), Input('dropdown-ventana', 'value')]
+    [Input('btn-forecast', 'n_clicks')],
+    [State('dropdown-host', 'value'), State('dropdown-metric', 'value'), State('dropdown-past-days', 'value'), State('dropdown-future-days', 'value')]
 )
-def process_analytics(host, ventana_intervalos):
+def process_analytics(n_clicks, host, metric, past_days, future_days):
+    # Evita que el dashboard procese todo al abrir la página. Espera al clic.
+    if not n_clicks:
+        fig_empty = go.Figure().update_layout(template="plotly_dark", title="Ready. Adjust parameters and click Forecast.")
+        return fig_empty, html.Div("Waiting for execution..."), fig_empty
+
     if not host:
         return go.Figure(), "Select a host", go.Figure()
 
-    # Calculate history hours (e.g. 360 * 5 / 60 = 30 hours)
-    horas_historial = (int(ventana_intervalos) * 5) / 60
-    df_telemetry = execute_query('query_telemetry.sql', (host, horas_historial))
+    metric_label = "CPU" if "cpu" in metric else "Memory"
+
+    # --- CONSULTA DINÁMICA A LA NUEVA TABLA "Servers" ---
+    # Esto reemplaza al antiguo query_telemetry.sql
+    query_telemetry = f"""
+    SELECT timestamp AS "Time", "{metric}" AS "Usage"
+    FROM "Servers"
+    WHERE "ServerName" = %s AND timestamp >= NOW() - INTERVAL '{past_days} days'
+    ORDER BY timestamp ASC;
+    """
+    
+    df_telemetry = execute_query(query_telemetry, (host,), is_select=True, is_file=False)
     df_excl = execute_query('query_exclusions.sql', (host,))
 
-    # 1. THE MAGIC OF ZERO: Build the perfect time skeleton anchored to CST
+    # 1. ALINEACIÓN DE REJILLA (Intervalos de 5 mins = 288 por día)
+    intervalos_pasados = int(past_days) * 288 
+    pasos_futuros = int(future_days) * 288
+    
     now_floored = pd.Timestamp.now(tz='America/Mexico_City').floor('5min').tz_localize(None)
-    esqueleto_tiempo = pd.date_range(end=now_floored, periods=int(ventana_intervalos), freq='5min')
+    esqueleto_tiempo = pd.date_range(end=now_floored, periods=intervalos_pasados, freq='5min')
 
-    if df_telemetry.empty:
-        df_telemetry = pd.DataFrame(0, index=esqueleto_tiempo, columns=['CPU_Usage', 'CPU_Clean'])
+    if df_telemetry is None or df_telemetry.empty:
+        df_telemetry = pd.DataFrame(0, index=esqueleto_tiempo, columns=['Usage', 'Clean'])
         df_telemetry.index.name = 'Time'
     else:
         df_telemetry['Time'] = pd.to_datetime(df_telemetry['Time'])
         df_telemetry.set_index('Time', inplace=True)
         
-        # Ensure UTC timezone is declared, then cast to CST (America/Mexico_City)
         if df_telemetry.index.tz is None:
             df_telemetry.index = df_telemetry.index.tz_localize('UTC')
         
-        # Shift DB data to match your local timezone, then strip tz for ARIMA compatibility
         df_telemetry.index = df_telemetry.index.tz_convert('America/Mexico_City').tz_localize(None)
-        
-        # Clean duplicates after shifting timezone
         df_telemetry = df_telemetry[~df_telemetry.index.duplicated(keep='last')]
-        
-        # Paste the localized DB data onto the perfect CST skeleton
         df_telemetry = df_telemetry.reindex(esqueleto_tiempo)
         
-        # Fill micro-cuts and force long drops to zero
-        df_telemetry['CPU_Usage'] = df_telemetry['CPU_Usage'].ffill(limit=3).fillna(0)
-        df_telemetry['CPU_Clean'] = df_telemetry['CPU_Usage'].copy()
+        df_telemetry['Usage'] = df_telemetry['Usage'].ffill(limit=3).fillna(0)
+        df_telemetry['Clean'] = df_telemetry['Usage'].copy()
 
-    # 2. Apply exclusions safely
-    # Note: Since exclusions are entered manually as naive CST strings, they will perfectly match the CST index
-    if not df_excl.empty:
+    # 2. APLICAR EXCLUSIONES (Limpieza de anomalías)
+    if df_excl is not None and not df_excl.empty:
         for _, row in df_excl.iterrows():
             start_dt = pd.to_datetime(row['start_time'])
             end_dt = pd.to_datetime(row['end_time'])
-            df_telemetry.loc[start_dt:end_dt, 'CPU_Clean'] = np.nan
+            df_telemetry.loc[start_dt:end_dt, 'Clean'] = np.nan
             
-        df_telemetry['CPU_Clean'] = df_telemetry['CPU_Clean'].fillna(df_telemetry['CPU_Clean'].shift(1).rolling('3h', min_periods=1).mean())
-        df_telemetry['CPU_Clean'] = df_telemetry['CPU_Clean'].bfill().fillna(0)
+        df_telemetry['Clean'] = df_telemetry['Clean'].fillna(df_telemetry['Clean'].shift(1).rolling('3h', min_periods=1).mean())
+        df_telemetry['Clean'] = df_telemetry['Clean'].bfill().fillna(0)
 
-    # 3. Heatmap
+    
+    # 3. HEATMAP
     df_heatmap_prep = df_telemetry.copy()
     df_heatmap_prep['Date'] = df_heatmap_prep.index.strftime('%Y-%m-%d')
     df_heatmap_prep['Hour'] = df_heatmap_prep.index.hour
-    pivot_df = df_heatmap_prep.groupby(['Hour', 'Date'])['CPU_Usage'].max().unstack(level=1).fillna(0)
+    pivot_df = df_heatmap_prep.groupby(['Hour', 'Date'])['Usage'].max().unstack(level=1).fillna(0)
     
-    fig_heatmap = go.Figure(data=go.Heatmap(z=pivot_df.values, x=pivot_df.columns, y=pivot_df.index, colorscale='Viridis'))
-    fig_heatmap.update_layout(template="plotly_dark", yaxis=dict(tickmode='linear', dtick=1), margin=dict(l=40, r=20, t=20, b=40), height=300)
-
-    # 4. Auto-ARIMA Preparation with Exogenous Variables (Offline Schedule)
-    y_train = df_telemetry['CPU_Clean']
+    # Escala de colores dinámica anclada a porcentajes
+    custom_colorscale = [
+        [0.0, '#00bc8c'],  
+        [0.5, '#f1c40f'],  
+        [0.8, '#ff4d4d'],  
+        [1.0, '#8b0000']   
+    ]
+    
+    fig_heatmap = go.Figure(data=go.Heatmap(
+        z=pivot_df.values, 
+        x=pivot_df.columns, 
+        y=pivot_df.index, 
+        colorscale=custom_colorscale,
+        zmin=0,   # Mantiene el verde anclado al 0% real
+        zmax=100  # Mantiene el rojo oscuro anclado al 100% real
+    ))
+    
+    fig_heatmap.update_layout(
+        template="plotly_dark", 
+        yaxis=dict(tickmode='linear', dtick=1), 
+        margin=dict(l=40, r=20, t=20, b=40), 
+        height=300
+    )
+    # 4. ENTRENAMIENTO SARIMAX
+    y_train = df_telemetry['Clean']
     
     X_train = pd.DataFrame(index=y_train.index)
     X_train['is_ai_running'] = 0.0
-    # Mathematically notify that from 00:00 to 10:59 local time the equipment sleeps
     X_train['is_offline_schedule'] = (X_train.index.hour < 11).astype(int)
     
-    pasos_futuros = int(int(ventana_intervalos) / 2)
     fechas_futuras = pd.date_range(start=esqueleto_tiempo[-1], periods=pasos_futuros + 1, freq='5min')[1:]
     
     X_future = pd.DataFrame(index=fechas_futuras)
@@ -303,7 +348,6 @@ def process_analytics(host, ventana_intervalos):
     X_future['is_offline_schedule'] = (X_future.index.hour < 11).astype(int)
     
     try:
-        # Training
         model = pm.auto_arima(y_train, X=X_train, start_p=0, start_q=0, max_p=3, max_q=3, seasonal=False, error_action='ignore', suppress_warnings=True)
         prediccion, conf_int = model.predict(n_periods=pasos_futuros, X=X_future, return_conf_int=True)
         
@@ -312,13 +356,13 @@ def process_analytics(host, ventana_intervalos):
         
     except Exception as e:
         fig_err = go.Figure()
-        fig_err.update_layout(template="plotly_dark", title=f"Calibrating model (Waiting for more clean data)... Detail: {e}")
+        fig_err.update_layout(template="plotly_dark", title=f"Calibrating model... Error: {e}")
         return fig_err, "Insufficient data to converge", fig_heatmap
 
-    # 5. Draw Main Graph
+    # 5. DIBUJAR GRÁFICO PRINCIPAL
     fig_forecast = go.Figure()
-    fig_forecast.add_trace(go.Scatter(x=df_telemetry.index, y=df_telemetry['CPU_Usage'], name='Raw (DB)', line=dict(color='gray', width=1), opacity=0.5))
-    fig_forecast.add_trace(go.Scatter(x=df_telemetry.index, y=df_telemetry['CPU_Clean'], name='Filtered (Exclusions)', line=dict(color='#00bc8c', width=2)))
+    fig_forecast.add_trace(go.Scatter(x=df_telemetry.index, y=df_telemetry['Usage'], name='Raw (DB)', line=dict(color='gray', width=1), opacity=0.5))
+    fig_forecast.add_trace(go.Scatter(x=df_telemetry.index, y=df_telemetry['Clean'], name='Filtered (Exclusions)', line=dict(color='#00bc8c', width=2)))
     
     fig_forecast.add_trace(go.Scatter(x=list(fechas_futuras), y=list(prediccion), name='Forecast', line=dict(color='#3498db', dash='dash', width=2)))
     
@@ -328,33 +372,29 @@ def process_analytics(host, ventana_intervalos):
         fill='toself', fillcolor='rgba(52, 152, 219, 0.15)', line=dict(color='rgba(255,255,255,0)'), showlegend=True, name="95% Confidence"
     ))
 
-    # --- THRESHOLD LINE (80%) ---
+    # LÍNEA DE UMBRAL CRÍTICO
     fig_forecast.add_hline(
-        y=80, 
-        line_dash="dot", 
-        line_color="#ff4d4d",
-        line_width=2,
-        annotation_text="⚠️ Critical Threshold (80%)", 
-        annotation_position="top left",
-        annotation_font=dict(color="#ff4d4d")
+        y=80, line_dash="dot", line_color="#ff4d4d", line_width=2,
+        annotation_text="⚠️ Critical Threshold (80%)", annotation_position="top left", annotation_font=dict(color="#ff4d4d")
     )
     
     fig_forecast.update_layout(
-        title=f"SARIMAX: {int(ventana_intervalos)} Past Intervals → {pasos_futuros} Future",
+        title=f"SARIMAX: {past_days} Days Past → {future_days} Days Future ({metric_label})",
         template="plotly_dark", margin=dict(l=40, r=20, t=40, b=40), height=350, legend=dict(orientation="h", y=1.02),
-        yaxis=dict(range=[0, 105]) # Keeps the Y-axis fixed up to 100% so the threshold is always visible
+        yaxis=dict(range=[0, 105])
     )
     
-    # 6. Final Statistics
+    # 6. ESTADÍSTICAS FINALES
     stats_data = [
+        {"Metric": "Target", "Value": metric_label.upper()},
         {"Metric": "ARIMA Winner", "Value": ganador_arima},
-        {"Metric": "Akaike Info Criterion (AIC)", "Value": aic_val},
-        {"Metric": "Average CPU (Window)", "VALUE": f"{df_telemetry['CPU_Usage'].mean():.2f}%"}
+        {"Metric": "Akaike Info (AIC)", "Value": aic_val},
+        {"Metric": "Average (Window)", "Value": f"{df_telemetry['Usage'].mean():.2f}%"}
     ]
     
-    table_stats = dbc.Table([html.Thead(html.Tr([html.Th("Metric"), html.Th("Value")])), html.Tbody([html.Tr([html.Td(st["Metric"]), html.Td(st.get("Value") or st.get("VALUE"))]) for st in stats_data])], bordered=True, hover=True, striped=True, size="sm", className="text-white bg-dark")
+    table_stats = dbc.Table([html.Thead(html.Tr([html.Th("Metric"), html.Th("Value")])), html.Tbody([html.Tr([html.Td(st["Metric"]), html.Td(st["Value"])]) for st in stats_data])], bordered=True, hover=True, striped=True, size="sm", className="text-white bg-dark")
 
     return fig_forecast, table_stats, fig_heatmap
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8099, debug=True)
+    app.run(host='0.0.0.0', port=8099, debug=False)
